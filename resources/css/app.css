@@ -1,0 +1,151 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../views/**/*.blade.php';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* Paleta Ruby Cristancho: neutros, beige, rosa suave y dorado discreto */
+    --color-cream-50: #fdfbf7;
+    --color-cream-100: #faf5ee;
+    --color-cream-200: #f3e9dc;
+    --color-cream-300: #e9d8c3;
+
+    --color-blush-50: #fdf4f5;
+    --color-blush-100: #fbe8ea;
+    --color-blush-200: #f6d0d5;
+    --color-blush-300: #eeaab3;
+    --color-blush-400: #e27d8c;
+    --color-blush-500: #d15b6f;
+    --color-blush-600: #b93f55;
+
+    --color-gold-300: #e3c88f;
+    --color-gold-400: #d4af6a;
+    --color-gold-500: #c39a4c;
+    --color-gold-600: #a67f37;
+
+    --color-ink-500: #6b6b6b;
+    --color-ink-700: #3d3d3d;
+    --color-ink-900: #1f1d1b;
+}
+
+@layer base {
+    body {
+        background-color: var(--color-cream-100);
+        color: var(--color-ink-900);
+        -webkit-font-smoothing: antialiased;
+    }
+}
+
+@layer components {
+    .card {
+        @apply rounded-2xl border border-cream-200 bg-white shadow-sm;
+    }
+
+    .card-body {
+        @apply p-5 sm:p-6;
+    }
+
+    .btn-primary {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition
+            focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50
+            bg-blush-500 text-white hover:bg-blush-600 focus:ring-blush-300;
+    }
+
+    .btn-gold {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition
+            focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50
+            bg-gold-500 text-white hover:bg-gold-600 focus:ring-gold-300;
+    }
+
+    .btn-dark {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition
+            focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50
+            bg-ink-900 text-white hover:bg-ink-700 focus:ring-ink-500;
+    }
+
+    .btn-ghost {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition
+            focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50
+            border border-cream-300 bg-white text-ink-700 hover:bg-cream-100 focus:ring-cream-300;
+    }
+
+    .btn-danger {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition
+            focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50
+            bg-red-600 text-white hover:bg-red-700 focus:ring-red-300;
+    }
+
+    /* Tamaño compacto para tablas y barras de acciones */
+    .btn-sm {
+        @apply gap-1.5 rounded-lg px-3 py-1.5 text-xs;
+    }
+
+    /* Enlace de acción dentro de tablas (sin fondo hasta el hover) */
+    .btn-link {
+        @apply inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-blush-600
+            transition hover:bg-blush-50 hover:text-blush-600;
+    }
+
+    .btn-link-danger {
+        @apply inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-red-600
+            transition hover:bg-red-50 hover:text-red-700;
+    }
+
+    /* Estado activo/presión consistente para todos los botones */
+    .btn-primary:active,
+    .btn-gold:active,
+    .btn-dark:active,
+    .btn-ghost:active,
+    .btn-danger:active {
+        @apply scale-[.98];
+    }
+
+    .label {
+        @apply mb-1 block text-sm font-medium text-ink-700;
+    }
+
+    .field {
+        @apply w-full rounded-lg border border-cream-300 bg-white px-3 py-2 text-sm text-ink-900 shadow-sm
+            focus:border-blush-400 focus:outline-none focus:ring-1 focus:ring-blush-400;
+    }
+
+    .badge {
+        @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+    }
+
+    .table-wrap {
+        @apply overflow-x-auto rounded-2xl border border-cream-200 bg-white;
+    }
+
+    .table {
+        @apply min-w-full divide-y divide-cream-200 text-sm;
+    }
+
+    .table thead {
+        @apply bg-cream-100 text-left text-xs font-semibold uppercase tracking-wide text-ink-500;
+    }
+
+    .table th {
+        @apply px-4 py-3;
+    }
+
+    .table td {
+        @apply px-4 py-3 text-ink-700;
+    }
+
+    .table tbody tr {
+        @apply border-b border-cream-100 hover:bg-blush-50/40;
+    }
+
+    .stat-card {
+        @apply flex flex-col gap-1 rounded-2xl border border-cream-200 bg-white p-5 shadow-sm sm:p-6;
+    }
+}
+
+[x-cloak] {
+    display: none !important;
+}
