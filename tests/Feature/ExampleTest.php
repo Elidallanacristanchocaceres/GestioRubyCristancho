@@ -2,18 +2,19 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
     /**
-     * La raíz redirige al panel principal.
+     * La raíz responde como API (la interfaz vive en la SPA Angular).
      */
-    public function test_the_application_root_redirects_to_panel(): void
+    public function test_the_application_root_returns_api_info(): void
     {
-        $response = $this->get('/');
-
-        $response->assertRedirect('/panel');
+        $this->get('/')
+            ->assertOk()
+            ->assertJsonPath('app', 'GestioRubyCristancho API')
+            ->assertJsonPath('api', url('/api'))
+            ->assertJsonPath('docs', url('/docs'));
     }
 }

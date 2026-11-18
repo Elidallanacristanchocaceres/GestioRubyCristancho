@@ -28,6 +28,7 @@ class Estilista extends Model
             'fecha_contratacion' => 'date',
             'salario_base' => 'decimal:2',
             'activo' => 'boolean',
+            'telefono' => 'encrypted',
         ];
     }
 

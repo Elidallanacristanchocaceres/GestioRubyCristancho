@@ -45,8 +45,11 @@ return new class extends Migration
 
         // stock y stock_minimo pasan de entero a decimal para gramos/ml. Es una
         // conversión no destructiva: los valores existentes se conservan igual.
-        DB::statement('ALTER TABLE `productos` MODIFY `stock` DECIMAL(14,3) NOT NULL DEFAULT 0');
-        DB::statement('ALTER TABLE `productos` MODIFY `stock_minimo` DECIMAL(14,3) NOT NULL DEFAULT 0');
+        // SQLite no soporta MODIFY; el esquema base ya los define como decimal.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE `productos` MODIFY `stock` DECIMAL(14,3) NOT NULL DEFAULT 0');
+            DB::statement('ALTER TABLE `productos` MODIFY `stock_minimo` DECIMAL(14,3) NOT NULL DEFAULT 0');
+        }
 
         Schema::table('inventario_movimientos', function (Blueprint $table) {
             if (! Schema::hasColumn('inventario_movimientos', 'unidad')) {
@@ -75,9 +78,11 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE `inventario_movimientos` MODIFY `cantidad` DECIMAL(14,3) NOT NULL');
-        DB::statement('ALTER TABLE `inventario_movimientos` MODIFY `stock_anterior` DECIMAL(14,3) NULL');
-        DB::statement('ALTER TABLE `inventario_movimientos` MODIFY `stock_nuevo` DECIMAL(14,3) NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE `inventario_movimientos` MODIFY `cantidad` DECIMAL(14,3) NOT NULL');
+            DB::statement('ALTER TABLE `inventario_movimientos` MODIFY `stock_anterior` DECIMAL(14,3) NULL');
+            DB::statement('ALTER TABLE `inventario_movimientos` MODIFY `stock_nuevo` DECIMAL(14,3) NULL');
+        }
     }
 
     public function down(): void

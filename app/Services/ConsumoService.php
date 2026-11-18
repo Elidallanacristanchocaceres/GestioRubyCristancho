@@ -26,7 +26,10 @@ use Illuminate\Validation\ValidationException;
  */
 class ConsumoService
 {
-    public function __construct(private readonly InventarioService $inventario) {}
+    public function __construct(
+        private readonly InventarioService $inventario,
+        private readonly CierreDiarioService $cierres,
+    ) {}
 
     /**
      * @param  array  $datos  cabecera + 'detalles' => [producto_id, cantidad, costo_unitario?, notas?]
@@ -43,7 +46,10 @@ class ConsumoService
             return $existente->load(['detalles.producto', 'cliente', 'servicio', 'estilista']);
         }
 
-        return DB::transaction(function () use ($datos, $detalles, $token) {
+        $fecha = $datos['fecha'] ?? now()->toDateString();
+        $this->cierres->assertDiaAbierto($fecha);
+
+        return DB::transaction(function () use ($datos, $detalles, $token, $fecha) {
             $consumo = Consumo::create([
                 'token' => $token,
                 'cliente_id' => $datos['cliente_id'] ?? null,
@@ -51,7 +57,7 @@ class ConsumoService
                 'venta_id' => $datos['venta_id'] ?? null,
                 'servicio_id' => $datos['servicio_id'] ?? null,
                 'estilista_id' => $datos['estilista_id'] ?? null,
-                'fecha' => $datos['fecha'] ?? now()->toDateString(),
+                'fecha' => $fecha,
                 'observaciones' => $datos['observaciones'] ?? null,
                 'descripcion' => $datos['descripcion'] ?? $datos['observaciones'] ?? null,
                 'precio_cobrado' => $this->precio($datos['precio_cobrado'] ?? null),
@@ -83,7 +89,7 @@ class ConsumoService
      * devuelve el consumo con todas sus líneas.
      *
      * @param  array  $cabecera  token, fecha, cliente_id, servicio_id, estilista_id, precio_cobrado, descripcion, observaciones
-     * @param  array  $linea      producto_id, cantidad, costo_unitario?, notas?, detalle_id? (para actualizar una ya guardada)
+     * @param  array  $linea  producto_id, cantidad, costo_unitario?, notas?, detalle_id? (para actualizar una ya guardada)
      */
     public function guardarLinea(array $cabecera, array $linea): Consumo
     {
@@ -99,6 +105,13 @@ class ConsumoService
                     'consumo' => 'No se puede agregar productos a un registro anulado.',
                 ]);
             }
+
+            if ($consumo) {
+                $this->cierres->assertDiaAbierto($consumo->fecha->toDateString());
+            }
+            $this->cierres->assertDiaAbierto(
+                $cabecera['fecha'] ?? $consumo?->fecha?->toDateString() ?? now()->toDateString()
+            );
 
             if (! $consumo) {
                 $consumo = Consumo::create([
@@ -186,6 +199,11 @@ class ConsumoService
                 ]);
             }
 
+            $this->cierres->assertDiaAbierto($consumo->fecha->toDateString());
+            if (isset($datos['fecha'])) {
+                $this->cierres->assertDiaAbierto($datos['fecha']);
+            }
+
             $consumo->update([
                 'fecha' => $datos['fecha'] ?? $consumo->fecha->toDateString(),
                 'descripcion' => array_key_exists('descripcion', $datos)
@@ -224,6 +242,8 @@ class ConsumoService
                     'consumo' => 'No se puede modificar un registro anulado.',
                 ]);
             }
+
+            $this->cierres->assertDiaAbierto($consumo->fecha->toDateString());
 
             $linea = ConsumoServicio::whereKey($detalleId)
                 ->where('consumo_id', $consumo->id)
@@ -271,6 +291,11 @@ class ConsumoService
                 ]);
             }
 
+            $this->cierres->assertDiaAbierto($consumo->fecha->toDateString());
+            if (isset($datos['fecha'])) {
+                $this->cierres->assertDiaAbierto($datos['fecha']);
+            }
+
             // Devuelve el inventario de las líneas actuales y las descarta.
             $this->devolverStock($consumo);
             $consumo->detalles()->delete();
@@ -314,6 +339,8 @@ class ConsumoService
                 throw ValidationException::withMessages(['consumo' => 'Este registro ya está anulado.']);
             }
 
+            $this->cierres->assertDiaAbierto($consumo->fecha->toDateString());
+
             $this->devolverStock($consumo);
 
             $consumo->update([
@@ -338,6 +365,8 @@ class ConsumoService
     {
         DB::transaction(function () use ($consumo) {
             $consumo = Consumo::whereKey($consumo->id)->lockForUpdate()->firstOrFail();
+
+            $this->cierres->assertDiaAbierto($consumo->fecha->toDateString());
 
             if ($consumo->esActivo()) {
                 $this->devolverStock($consumo);

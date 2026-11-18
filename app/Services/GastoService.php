@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Caja;
+use App\Models\CajaMovimiento;
+use App\Models\CategoriaGasto;
 use App\Models\Gasto;
 use App\Support\Money;
 use Illuminate\Support\Facades\Auth;
@@ -10,7 +13,10 @@ use Illuminate\Validation\ValidationException;
 
 class GastoService
 {
-    public function __construct(private readonly CajaService $caja) {}
+    public function __construct(
+        private readonly CajaService $caja,
+        private readonly CierreDiarioService $cierres,
+    ) {}
 
     public function registrar(array $datos): Gasto
     {
@@ -22,13 +28,17 @@ class GastoService
             }
 
             $estado = $datos['estado'] ?? 'pagado';
+            $ambito = $this->ambito($datos);
+            $fecha = $datos['fecha'] ?? now()->toDateString();
+            $this->cierres->assertDiaAbierto($fecha);
 
             $gasto = Gasto::create([
                 'monto' => $monto,
                 'categoria_gasto_id' => $datos['categoria_gasto_id'] ?? null,
+                'ambito' => $ambito,
                 'estado' => $estado,
                 'descripcion' => $datos['descripcion'],
-                'fecha' => $datos['fecha'] ?? now()->toDateString(),
+                'fecha' => $fecha,
                 'metodo_pago_id' => $datos['metodo_pago_id'] ?? null,
                 'proveedor_id' => $datos['proveedor_id'] ?? null,
                 'comprobante' => $datos['comprobante'] ?? null,
@@ -36,7 +46,7 @@ class GastoService
             ]);
 
             // Solo afecta la caja si el gasto está pagado y hay caja abierta.
-            if ($estado === 'pagado' && ($datos['afectar_caja'] ?? true) && \App\Models\Caja::cajaAbierta()) {
+            if ($estado === 'pagado' && ($datos['afectar_caja'] ?? true) && Caja::cajaAbierta()) {
                 $movimiento = $this->caja->registrarMovimiento([
                     'gasto_id' => $gasto->id,
                     'tipo' => 'egreso',
@@ -51,6 +61,7 @@ class GastoService
 
             AuditoriaService::registrar('crear', 'gastos', Gasto::class, $gasto->id, [], [
                 'monto' => $monto,
+                'ambito' => $ambito,
                 'descripcion' => $gasto->descripcion,
             ]);
 
@@ -61,11 +72,17 @@ class GastoService
     public function actualizar(Gasto $gasto, array $datos): Gasto
     {
         return DB::transaction(function () use ($gasto, $datos) {
-            $antes = $gasto->only(['monto', 'descripcion', 'fecha', 'estado', 'categoria_gasto_id']);
+            $antes = $gasto->only(['monto', 'descripcion', 'fecha', 'estado', 'categoria_gasto_id', 'ambito']);
+
+            $this->cierres->assertDiaAbierto($gasto->fecha->toDateString());
+            if (isset($datos['fecha'])) {
+                $this->cierres->assertDiaAbierto($datos['fecha']);
+            }
 
             $gasto->update([
                 'monto' => Money::normal($datos['monto'] ?? $gasto->monto),
                 'categoria_gasto_id' => $datos['categoria_gasto_id'] ?? $gasto->categoria_gasto_id,
+                'ambito' => $this->ambito($datos, $gasto->ambito),
                 'descripcion' => $datos['descripcion'] ?? $gasto->descripcion,
                 'fecha' => $datos['fecha'] ?? $gasto->fecha,
                 'metodo_pago_id' => $datos['metodo_pago_id'] ?? $gasto->metodo_pago_id,
@@ -74,7 +91,7 @@ class GastoService
                 'estado' => $datos['estado'] ?? $gasto->estado,
             ]);
 
-            AuditoriaService::registrar('actualizar', 'gastos', Gasto::class, $gasto->id, $antes, $gasto->only(['monto', 'descripcion', 'estado']));
+            AuditoriaService::registrar('actualizar', 'gastos', Gasto::class, $gasto->id, $antes, $gasto->only(['monto', 'descripcion', 'estado', 'ambito']));
 
             return $gasto->fresh();
         });
@@ -85,8 +102,10 @@ class GastoService
         DB::transaction(function () use ($gasto, $motivo) {
             $antes = $gasto->only(['monto', 'descripcion']);
 
+            $this->cierres->assertDiaAbierto($gasto->fecha->toDateString());
+
             if ($gasto->caja_movimiento_id) {
-                $movimiento = \App\Models\CajaMovimiento::find($gasto->caja_movimiento_id);
+                $movimiento = CajaMovimiento::find($gasto->caja_movimiento_id);
                 if ($movimiento) {
                     $movimiento->update([
                         'estado' => 'anulado',
@@ -99,5 +118,25 @@ class GastoService
 
             AuditoriaService::registrar('eliminar', 'gastos', Gasto::class, $gasto->id, $antes, [], $motivo);
         });
+    }
+
+    private function ambito(array $datos, ?string $actual = null): string
+    {
+        $solicitado = $datos['ambito'] ?? null;
+
+        if (in_array($solicitado, [Gasto::AMBITO_SALON, Gasto::AMBITO_CASA], true)) {
+            return $solicitado;
+        }
+
+        if (! empty($datos['categoria_gasto_id'])) {
+            $categoria = CategoriaGasto::find($datos['categoria_gasto_id']);
+            if ($categoria && in_array($categoria->ambito, [Gasto::AMBITO_SALON, Gasto::AMBITO_CASA], true)) {
+                return $categoria->ambito;
+            }
+        }
+
+        return in_array($actual, [Gasto::AMBITO_SALON, Gasto::AMBITO_CASA], true)
+            ? $actual
+            : Gasto::AMBITO_SALON;
     }
 }

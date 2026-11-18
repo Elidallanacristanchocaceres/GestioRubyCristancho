@@ -38,7 +38,7 @@ class InventarioNormalizarCatalogo extends Command
 
         $map = [];
         foreach ($categorias as $nombre => $descripcion) {
-            $map[$nombre] = CategoriaProducto::firstOrCreate(['nombre' => $nombre], ['descripcion' => $descripcion]);
+            $map[$nombre] = CategoriaProducto::firstOrCreate(['nombre' => $nombre]);
         }
 
         $productos = Producto::orderBy('id')->get();

@@ -28,7 +28,9 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE `caja_movimientos` MODIFY `monto` DECIMAL(14,2) NOT NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE `caja_movimientos` MODIFY `monto` DECIMAL(14,2) NOT NULL');
+        }
 
         // Conteo por medio de pago al cerrar la caja.
         if (! Schema::hasTable('caja_cierre_detalles')) {
@@ -58,7 +60,9 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE `caja` MODIFY `saldo_inicial` DECIMAL(14,2) NOT NULL DEFAULT 0');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE `caja` MODIFY `saldo_inicial` DECIMAL(14,2) NOT NULL DEFAULT 0');
+        }
 
         // Gastos ganan categoría configurable, medio de pago y estado.
         Schema::table('gastos', function (Blueprint $table) {
@@ -88,7 +92,9 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE `gastos` MODIFY `monto` DECIMAL(14,2) NOT NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE `gastos` MODIFY `monto` DECIMAL(14,2) NOT NULL');
+        }
 
         // Compras ganan proveedor, factura y control de pagos.
         Schema::table('compras', function (Blueprint $table) {
@@ -119,7 +125,9 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE `compras` MODIFY `total` DECIMAL(14,2) NOT NULL DEFAULT 0');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE `compras` MODIFY `total` DECIMAL(14,2) NOT NULL DEFAULT 0');
+        }
 
         Schema::table('compra_detalles', function (Blueprint $table) {
             if (! Schema::hasColumn('compra_detalles', 'unidad')) {
@@ -136,8 +144,10 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE `compra_detalles` MODIFY `cantidad` DECIMAL(14,3) NOT NULL');
-        DB::statement('ALTER TABLE `compra_detalles` MODIFY `subtotal` DECIMAL(14,2) NOT NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE `compra_detalles` MODIFY `cantidad` DECIMAL(14,3) NOT NULL');
+            DB::statement('ALTER TABLE `compra_detalles` MODIFY `subtotal` DECIMAL(14,2) NOT NULL');
+        }
 
         // Compras a proveedor en cuotas / abonos.
         if (! Schema::hasTable('compra_pagos')) {

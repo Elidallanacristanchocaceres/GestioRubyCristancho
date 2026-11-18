@@ -30,6 +30,10 @@ class Cliente extends Model
             'fecha_nacimiento' => 'date',
             'activo' => 'boolean',
             'saldo_pendiente' => 'decimal:2',
+            'direccion' => 'encrypted',
+            'observaciones' => 'encrypted',
+            'preferencias_cabello' => 'encrypted',
+            'formula_color' => 'encrypted',
         ];
     }
 

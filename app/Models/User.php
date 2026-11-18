@@ -10,13 +10,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'cedula', 'email', 'password', 'role'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     public const ROLE_ADMIN = 'admin';
 
@@ -28,6 +29,7 @@ class User extends Authenticatable
     {
         return [
             'password' => 'hashed',
+            'cedula' => 'encrypted',
         ];
     }
 
@@ -41,7 +43,8 @@ class User extends Authenticatable
         return match ($this->role) {
             self::ROLE_ADMIN => 'Administrador',
             self::ROLE_EMPLEADO => 'Empleado',
-            default => 'Invitado',
+            self::ROLE_INVITADO => 'Consultor (Contadores)',
+            default => 'Consultor (Contadores)',
         };
     }
 

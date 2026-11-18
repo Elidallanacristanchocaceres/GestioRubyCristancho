@@ -7,11 +7,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CategoriaGasto extends Model
 {
+    public const AMBITO_SALON = 'salon';
+
+    public const AMBITO_CASA = 'casa';
+
     protected $table = 'categoria_gastos';
 
     protected $fillable = [
         'nombre',
-        'descripcion',
+        'ambito',
         'activo',
     ];
 

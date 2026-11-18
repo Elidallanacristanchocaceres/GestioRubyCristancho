@@ -2,19 +2,22 @@
 
 namespace App\Models;
 
-use App\Support\Money;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Gasto extends Model
 {
     use SoftDeletes;
 
+    public const AMBITO_SALON = 'salon';
+
+    public const AMBITO_CASA = 'casa';
+
     protected $fillable = [
         'monto',
         'categoria_gasto_id',
+        'ambito',
         'estado',
         'descripcion',
         'fecha',
@@ -67,5 +70,10 @@ class Gasto extends Model
     public function estaPagado(): bool
     {
         return $this->estado === 'pagado';
+    }
+
+    public function ambitoLabel(): string
+    {
+        return $this->ambito === self::AMBITO_CASA ? 'Casa' : 'Salón';
     }
 }

@@ -110,7 +110,9 @@ return new class extends Migration
             }
         });
 
-        DB::statement('ALTER TABLE `pagos` MODIFY `cita_id` BIGINT(20) UNSIGNED NULL');
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE `pagos` MODIFY `cita_id` BIGINT(20) UNSIGNED NULL');
+        }
     }
 
     public function down(): void

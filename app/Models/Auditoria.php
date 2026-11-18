@@ -46,6 +46,7 @@ class Auditoria extends Model
             'cierre' => 'Cerró caja',
             'consumo' => 'Consumió inventario',
             'pago' => 'Registró pago',
+            'ver' => 'Consultó',
             default => ucfirst($this->accion),
         };
     }

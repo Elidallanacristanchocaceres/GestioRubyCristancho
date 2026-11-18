@@ -3,16 +3,20 @@
 namespace Tests\Feature;
 
 use App\Models\Atencion;
+use App\Models\CategoriaServicio;
 use App\Models\Cliente;
 use App\Models\Servicio;
 use App\Models\User;
-use App\Support\Money;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
  * Registro diario de clientes (atenciones): totales, saldo, anulación y
  * separación del registro de productos.
+ *
+ * La interfaz Blade se eliminó; estas pruebas ejercitan la API JSON que
+ * consume Angular.
  */
 class AtencionTest extends TestCase
 {
@@ -32,7 +36,7 @@ class AtencionTest extends TestCase
             'role' => User::ROLE_ADMIN,
         ]);
 
-        $this->actingAs($this->admin);
+        Sanctum::actingAs($this->admin);
     }
 
     private function cliente(): Cliente
@@ -47,12 +51,11 @@ class AtencionTest extends TestCase
 
     private function servicio(string $precio): Servicio
     {
-        $categoria = \App\Models\CategoriaServicio::firstOrCreate(['nombre' => 'Pruebas Atención']);
+        $categoria = CategoriaServicio::firstOrCreate(['nombre' => 'Pruebas Atención']);
 
         return Servicio::create([
             'categoria_servicio_id' => $categoria->id,
             'nombre' => 'Servicio '.uniqid(),
-            'duracion_minutos' => 60,
             'precio' => $precio,
             'activo' => true,
         ]);
@@ -64,7 +67,7 @@ class AtencionTest extends TestCase
         $s1 = $this->servicio('75000');
         $s2 = $this->servicio('20000');
 
-        $res = $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'cliente_id' => $cliente->id,
             'pagado' => '50000',
@@ -72,10 +75,9 @@ class AtencionTest extends TestCase
                 ['servicio_id' => $s1->id, 'cantidad' => '1', 'precio_unitario' => '75000'],
                 ['servicio_id' => $s2->id, 'cantidad' => '1', 'precio_unitario' => '20000'],
             ],
-        ]);
+        ])->assertCreated()->assertJsonPath('data.total', '95000.00');
 
         $atencion = Atencion::latest('id')->first();
-        $res->assertRedirect(route('atenciones.show', $atencion));
 
         $this->assertSame(2, $atencion->detalles()->count());
         $this->assertSame('95000.00', $atencion->total);
@@ -87,41 +89,37 @@ class AtencionTest extends TestCase
 
     public function test_permite_servicio_con_descripcion_libre(): void
     {
-        $res = $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'cliente_id' => $this->cliente()->id,
             'detalles' => [
                 ['descripcion' => 'Corte + peinado', 'cantidad' => '1', 'precio_unitario' => '40000'],
             ],
-        ]);
+        ])->assertCreated();
 
-        $res->assertSessionHasNoErrors();
         $this->assertSame('40000.00', Atencion::latest('id')->first()->total);
     }
 
     public function test_exige_al_menos_un_servicio_o_descripcion(): void
     {
-        $res = $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'cliente_id' => $this->cliente()->id,
             'detalles' => [
                 ['cantidad' => '1', 'precio_unitario' => '1000'],
             ],
-        ]);
+        ])->assertStatus(422)->assertJsonValidationErrors('detalles');
 
-        $res->assertSessionHasErrors('detalles');
         $this->assertSame(0, Atencion::count());
     }
 
     public function test_exige_al_menos_una_linea(): void
     {
-        $res = $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'cliente_id' => $this->cliente()->id,
             'detalles' => [],
-        ]);
-
-        $res->assertSessionHasErrors('detalles');
+        ])->assertStatus(422)->assertJsonValidationErrors('detalles');
     }
 
     public function test_actualizar_recalcula_total(): void
@@ -129,19 +127,19 @@ class AtencionTest extends TestCase
         $cliente = $this->cliente();
         $s1 = $this->servicio('50000');
 
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'cliente_id' => $cliente->id,
             'detalles' => [['servicio_id' => $s1->id, 'precio_unitario' => '50000']],
-        ]);
+        ])->assertCreated();
 
         $atencion = Atencion::latest('id')->first();
 
-        $this->put('/atenciones/'.$atencion->id, [
+        $this->putJson('/api/atenciones/'.$atencion->id, [
             'fecha' => now()->toDateString(),
             'cliente_id' => $cliente->id,
             'detalles' => [['servicio_id' => $s1->id, 'precio_unitario' => '80000']],
-        ]);
+        ])->assertOk();
 
         $atencion->refresh();
         $this->assertSame('80000.00', $atencion->total);
@@ -150,60 +148,52 @@ class AtencionTest extends TestCase
 
     public function test_anular_cambia_estado_y_no_permite_editar(): void
     {
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'cliente_id' => $this->cliente()->id,
             'detalles' => [['descripcion' => 'X', 'cantidad' => '1', 'precio_unitario' => '1000']],
-        ]);
+        ])->assertCreated();
 
         $atencion = Atencion::latest('id')->first();
 
-        $this->post('/atenciones/'.$atencion->id.'/anular')->assertRedirect(route('atenciones.show', $atencion));
+        $this->postJson('/api/atenciones/'.$atencion->id.'/anular')->assertOk();
         $atencion->refresh();
 
         $this->assertSame(Atencion::ESTADO_ANULADO, $atencion->estado);
         $this->assertNotNull($atencion->reversado_en);
 
-        $this->get('/atenciones/'.$atencion->id.'/editar')->assertStatus(403);
-    }
-
-    public function test_pagina_index_y_create_renderizan(): void
-    {
-        $this->get('/atenciones')->assertStatus(200);
-        $this->get('/atenciones/crear')->assertStatus(200);
+        $this->putJson('/api/atenciones/'.$atencion->id, [])->assertForbidden();
     }
 
     public function test_index_filtra_por_cliente(): void
     {
         $cliente = $this->cliente();
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'cliente_id' => $cliente->id,
             'detalles' => [['descripcion' => 'Filtro', 'cantidad' => '1', 'precio_unitario' => '1000']],
-        ]);
+        ])->assertCreated();
 
-        $res = $this->get('/atenciones?cliente='.$cliente->id);
-        $res->assertStatus(200);
-        $res->assertSee('Filtro');
+        $this->getJson('/api/atenciones?cliente='.$cliente->id)
+            ->assertOk()
+            ->assertJsonPath('data.0.cliente_id', $cliente->id)
+            ->assertJsonPath('data.0.servicios_label', 'Filtro');
     }
 
     public function test_registro_de_productos_sigue_independiente(): void
     {
-        // El registro de productos (consumos) no debe verse afectado por atenciones.
-        $this->get('/consumos')->assertStatus(200);
-        $this->get('/consumos/registrar')->assertStatus(200);
+        $this->getJson('/api/consumos')->assertOk();
+        $this->getJson('/api/consumos/opciones')->assertOk();
     }
 
     public function test_registra_servicio_manual_sin_descripcion(): void
     {
-        $res = $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'detalles' => [
                 ['servicio_id' => '', 'nombre' => 'Corte + balayage', 'precio_unitario' => '95000'],
             ],
-        ]);
-
-        $res->assertSessionHasNoErrors();
+        ])->assertCreated();
 
         $atencion = Atencion::latest('id')->first();
         $detalle = $atencion->detalles()->first();
@@ -219,12 +209,12 @@ class AtencionTest extends TestCase
     {
         $servicio = $this->servicio('60000');
 
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'detalles' => [
                 ['servicio_id' => $servicio->id, 'precio_unitario' => '60000'],
             ],
-        ])->assertSessionHasNoErrors();
+        ])->assertCreated();
 
         $detalle = Atencion::latest('id')->first()->detalles()->first();
 
@@ -234,12 +224,12 @@ class AtencionTest extends TestCase
 
     public function test_no_pide_datos_del_cliente(): void
     {
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'detalles' => [
                 ['servicio_id' => '', 'nombre' => 'Lavado', 'precio_unitario' => '35000'],
             ],
-        ])->assertSessionHasNoErrors();
+        ])->assertCreated();
 
         $atencion = Atencion::latest('id')->first();
 
@@ -247,30 +237,15 @@ class AtencionTest extends TestCase
         $this->assertSame('35000.00', $atencion->total);
     }
 
-    public function test_el_formulario_no_pide_cliente_ni_cantidad(): void
+    public function test_las_lineas_de_la_api_llegan_al_backend(): void
     {
-        $res = $this->get('/atenciones/crear');
-
-        $res->assertOk()
-            ->assertSee('Servicios realizados')
-            ->assertSee('Precio (COP)')
-            ->assertSee('Descripción (opcional)')
-            ->assertDontSee('name="cliente_id"')
-            ->assertDontSee('name="cantidad"')
-            // Las líneas se envían con nombres numerados (detalles[0][...])
-            ->assertSee('detalles[');
-    }
-
-    public function test_las_lineas_del_formulario_llegan_al_backend(): void
-    {
-        // Así es como el navegador envía las líneas del formulario.
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'detalles' => [
                 0 => ['servicio_id' => '', 'nombre' => 'Corte', 'descripcion' => '', 'precio_unitario' => '40000'],
                 1 => ['servicio_id' => '', 'nombre' => 'Color', 'descripcion' => 'Matiz 8.3', 'precio_unitario' => '90000'],
             ],
-        ])->assertSessionHasNoErrors();
+        ])->assertCreated();
 
         $atencion = Atencion::latest('id')->first();
 
@@ -280,14 +255,14 @@ class AtencionTest extends TestCase
 
     public function test_el_precio_se_pone_a_mano_en_pesos(): void
     {
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'pagado' => '200000',
             'detalles' => [
                 ['servicio_id' => '', 'nombre' => 'Color completo', 'precio_unitario' => '180000'],
                 ['servicio_id' => '', 'nombre' => 'Corte', 'precio_unitario' => '45000'],
             ],
-        ])->assertSessionHasNoErrors();
+        ])->assertCreated();
 
         $atencion = Atencion::latest('id')->first();
 
@@ -295,35 +270,33 @@ class AtencionTest extends TestCase
         $this->assertSame('200000.00', $atencion->pagado);
         $this->assertSame('25000.00', $atencion->saldo());
 
-        // La ficha muestra los precios en pesos colombianos.
-        $this->get('/atenciones/'.$atencion->id)
+        $this->getJson('/api/atenciones/'.$atencion->id)
             ->assertOk()
-            ->assertSee('$225.000')
-            ->assertSee('$180.000')
-            ->assertSee('$45.000');
+            ->assertJsonPath('data.total', '225000.00')
+            ->assertJsonPath('data.pagado', '200000.00')
+            ->assertJsonPath('saldo', '25000.00');
     }
 
     public function test_editar_conserva_el_cliente_que_ya_tenia(): void
     {
         $cliente = $this->cliente();
 
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'cliente_id' => $cliente->id,
             'detalles' => [
                 ['servicio_id' => '', 'nombre' => 'Corte', 'precio_unitario' => '40000'],
             ],
-        ]);
+        ])->assertCreated();
 
         $atencion = Atencion::latest('id')->first();
 
-        // El formulario ya no pregunta por el cliente: al editar no debe perderse.
-        $this->put('/atenciones/'.$atencion->id, [
+        $this->putJson('/api/atenciones/'.$atencion->id, [
             'fecha' => now()->toDateString(),
             'detalles' => [
                 ['servicio_id' => '', 'nombre' => 'Corte', 'precio_unitario' => '55000'],
             ],
-        ])->assertRedirect(route('atenciones.show', $atencion));
+        ])->assertOk();
 
         $atencion->refresh();
 
@@ -333,12 +306,12 @@ class AtencionTest extends TestCase
 
     public function test_una_linea_sin_servicio_nombre_ni_descripcion_no_se_guarda(): void
     {
-        $this->post('/atenciones', [
+        $this->postJson('/api/atenciones', [
             'fecha' => now()->toDateString(),
             'detalles' => [
                 ['servicio_id' => '', 'nombre' => '', 'descripcion' => '', 'precio_unitario' => '1000'],
             ],
-        ])->assertSessionHasErrors('detalles');
+        ])->assertStatus(422)->assertJsonValidationErrors('detalles');
 
         $this->assertSame(0, Atencion::count());
     }

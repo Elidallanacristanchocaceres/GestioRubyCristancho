@@ -13,6 +13,7 @@ class DatabaseSeeder extends Seeder
         // Datos de configuración y permisos (idempotentes, no destruyen datos).
         $this->call([
             ConfiguracionSeeder::class,
+            CategoriaGastoSeparacionSeeder::class,
             PermisoSeeder::class,
         ]);
 

@@ -13,20 +13,18 @@ class Proveedor extends Model
     protected $table = 'proveedores';
 
     protected $fillable = [
+        'nombre_marca',
         'nombre',
-        'nit',
-        'contacto',
         'telefono',
-        'whatsapp',
-        'email',
-        'direccion',
-        'observaciones',
         'activo',
     ];
 
     protected function casts(): array
     {
-        return ['activo' => 'boolean'];
+        return [
+            'activo' => 'boolean',
+            'telefono' => 'encrypted',
+        ];
     }
 
     public function productos(): HasMany

@@ -10,7 +10,7 @@ class PermisoSeeder extends Seeder
 {
     /**
      * Permisos configurables del sistema. El admin siempre tiene todo;
-     * estos se usan para los roles empleado e invitado.
+     * estos se usan para los roles empleado y consultor (rol interno: invitado).
      */
     public const PERMISOS = [
         ['clave' => 'dashboard.ver', 'nombre' => 'Ver panel principal', 'grupo' => 'Panel'],
@@ -48,13 +48,23 @@ class PermisoSeeder extends Seeder
         'proveedores.ver', 'compras.ver', 'compras.operar', 'reportes.ver',
     ];
 
+    /**
+     * Permisos por defecto para el rol consultor/contador (rol interno: invitado).
+     * Enfoque de solo consulta sobre información operativa y financiera.
+     */
+    public const CONSULTOR = [
+        'dashboard.ver', 'caja.ver', 'inventario.ver', 'clientes.ver', 'citas.ver',
+        'servicios.ver', 'ventas.ver', 'gastos.ver', 'proveedores.ver', 'compras.ver',
+        'reportes.ver', 'auditoria.ver',
+    ];
+
     public function run(): void
     {
         foreach (self::PERMISOS as $permiso) {
             Permiso::updateOrCreate(['clave' => $permiso['clave']], $permiso);
         }
 
-        // Asignar permisos por defecto a empleado e invitado (idempotente).
+        // Asignar permisos por defecto a empleado y consultor (rol interno: invitado).
         foreach (Permiso::all() as $permiso) {
             DB::table('permiso_roles')->updateOrInsert(
                 ['permiso_id' => $permiso->id, 'role' => 'empleado'],
@@ -63,7 +73,7 @@ class PermisoSeeder extends Seeder
 
             DB::table('permiso_roles')->updateOrInsert(
                 ['permiso_id' => $permiso->id, 'role' => 'invitado'],
-                ['permitido' => in_array($permiso->clave, ['dashboard.ver', 'citas.ver'], true), 'created_at' => now(), 'updated_at' => now()]
+                ['permitido' => in_array($permiso->clave, self::CONSULTOR, true), 'created_at' => now(), 'updated_at' => now()]
             );
         }
     }

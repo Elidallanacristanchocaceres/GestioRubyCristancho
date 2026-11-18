@@ -2,9 +2,10 @@
 
 namespace App\Services;
 
-use App\Models\Cliente;
+use App\Models\Caja;
+use App\Models\Cita;
 use App\Models\ConsumoServicio;
-use App\Models\MetodoPago;
+use App\Models\InventarioMovimiento;
 use App\Models\Producto;
 use App\Models\Servicio;
 use App\Models\Venta;
@@ -28,6 +29,7 @@ class VentaService
     public function __construct(
         private readonly InventarioService $inventario,
         private readonly CajaService $caja,
+        private readonly CierreDiarioService $cierres,
     ) {}
 
     /**
@@ -45,12 +47,15 @@ class VentaService
                 throw ValidationException::withMessages(['detalles' => 'La venta debe tener al menos un concepto.']);
             }
 
+            $fecha = $datos['fecha'] ?? now()->toDateString();
+            $this->cierres->assertDiaAbierto($fecha);
+
             $venta = Venta::create([
                 'numero' => $this->siguienteNumero(),
                 'cliente_id' => $datos['cliente_id'] ?? null,
                 'cita_id' => $datos['cita_id'] ?? null,
                 'estilista_id' => $datos['estilista_id'] ?? null,
-                'fecha' => $datos['fecha'] ?? now()->toDateString(),
+                'fecha' => $fecha,
                 'fecha_hora' => $datos['fecha_hora'] ?? now(),
                 'descuento' => Money::normal($datos['descuento'] ?? '0'),
                 'estado' => 'abierta',
@@ -79,7 +84,7 @@ class VentaService
             ]);
 
             if (! empty($datos['cita_id'])) {
-                \App\Models\Cita::whereKey($datos['cita_id'])->update([
+                Cita::whereKey($datos['cita_id'])->update([
                     'venta_id' => $venta->id,
                     'precio' => $total,
                 ]);
@@ -159,6 +164,8 @@ class VentaService
             'descripcion' => $descripcion,
             'cantidad' => $cantidad,
             'unidad' => $unidad,
+            'presentacion' => $producto->presentacionLabel(),
+            'contenido_envase' => $producto->contenido_envase,
             'precio_unitario' => $precio,
             'descuento' => $descuento,
             'subtotal' => $subtotal,
@@ -231,6 +238,8 @@ class VentaService
         return DB::transaction(function () use ($venta, $pagos, $registrarEnCaja) {
             $venta = Venta::whereKey($venta->id)->lockForUpdate()->firstOrFail();
 
+            $this->cierres->assertDiaAbierto($venta->fecha->toDateString());
+
             $totalNuevo = Money::normal($venta->total_pagado);
 
             foreach ($pagos as $pago) {
@@ -284,7 +293,7 @@ class VentaService
             ]);
 
             if ($venta->cita_id) {
-                \App\Models\Cita::whereKey($venta->cita_id)->update(['saldo_pendiente' => $saldo]);
+                Cita::whereKey($venta->cita_id)->update(['saldo_pendiente' => $saldo]);
             }
 
             AuditoriaService::registrar('pago', 'ventas', Venta::class, $venta->id, [], [
@@ -309,13 +318,15 @@ class VentaService
         return DB::transaction(function () use ($venta, $motivo) {
             $venta = Venta::with(['detalles', 'pagos', 'consumos'])->whereKey($venta->id)->lockForUpdate()->firstOrFail();
 
+            $this->cierres->assertDiaAbierto($venta->fecha->toDateString());
+
             if ($venta->estado === 'anulada') {
                 throw ValidationException::withMessages(['venta' => 'La venta ya está anulada.']);
             }
 
             // Revertir consumos de servicio agrupando por producto y lote.
             foreach ($venta->consumos()->where('estado', 'activo')->get() as $consumo) {
-                $movimientos = \App\Models\InventarioMovimiento::where('modulo', 'ventas')
+                $movimientos = InventarioMovimiento::where('modulo', 'ventas')
                     ->where('modulo_id', $venta->id)
                     ->where('producto_id', $consumo->producto_id)
                     ->where('tipo', InventarioService::TIPO_SALIDA)
@@ -342,13 +353,13 @@ class VentaService
 
             // Revertir productos de venta directa.
             foreach ($venta->detalles()->where('tipo', 'producto')->get() as $detalle) {
-                $movimientos = \App\Models\InventarioMovimiento::where('modulo', 'ventas')
+                $movimientos = InventarioMovimiento::where('modulo', 'ventas')
                     ->where('modulo_id', $venta->id)
                     ->where('producto_id', $detalle->producto_id)
                     ->get();
 
                 // Evitar doble reversión: solo si el último movimiento no fue devolución.
-                $yaDevuelto = \App\Models\InventarioMovimiento::where('modulo', 'ventas')
+                $yaDevuelto = InventarioMovimiento::where('modulo', 'ventas')
                     ->where('modulo_id', $venta->id)
                     ->where('producto_id', $detalle->producto_id)
                     ->where('tipo', InventarioService::TIPO_DEVOLUCION)
@@ -400,7 +411,7 @@ class VentaService
             ]);
 
             if ($venta->cita_id) {
-                \App\Models\Cita::whereKey($venta->cita_id)->update([
+                Cita::whereKey($venta->cita_id)->update([
                     'venta_id' => null,
                     'saldo_pendiente' => null,
                 ]);
@@ -414,7 +425,7 @@ class VentaService
 
     private function cajaActiva(): bool
     {
-        return (bool) \App\Models\Caja::cajaAbierta();
+        return (bool) Caja::cajaAbierta();
     }
 
     public function siguienteNumero(): string

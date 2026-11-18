@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
-use App\Models\CategoriaProducto;
 use App\Models\Consumo;
 use App\Models\ConsumoServicio;
 use App\Models\Producto;
 use App\Support\Money;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Reglas del registro diario de productos usados en la peluquería.
@@ -47,28 +47,67 @@ class RegistroDiarioService
      */
     public static function grupoDe(?Producto $producto): ?string
     {
-        $categoria = mb_strtolower(trim($producto?->categoria?->nombre ?? ''));
-
-        if ($categoria === '') {
+        if (! $producto) {
             return null;
         }
 
-        if (str_contains($categoria, 'tinte') || str_contains($categoria, 'coloraci')) {
+        $nombre = mb_strtolower(trim((string) $producto->nombre));
+        $grupoCategoria = mb_strtolower(trim((string) ($producto->categoria?->grupo ?? '')));
+        $categoria = mb_strtolower(trim((string) ($producto->categoria?->nombre ?? '')));
+
+        // Datos históricos: el "Tinte" quedó en Acondicionadores (grupo
+        // tratamientos) y debe entrar al registro como tinte.
+        if (($grupoCategoria === '' || $grupoCategoria === 'tratamientos' || $grupoCategoria === 'otros')
+            && (str_contains($nombre, 'tinte') || str_contains($nombre, 'colorante'))) {
             return 'tintes';
         }
 
-        if (str_contains($categoria, 'decolor') || str_contains($categoria, 'aclarante')
-            || str_contains($categoria, 'blond') || str_contains($categoria, 'lightener')) {
+        // El grupo configurado en la categoría manda.
+        $mapa = [
+            'tintes' => 'tintes',
+            'activadores' => 'coactivadores',
+            'coactivadores' => 'coactivadores',
+            'oxidantes' => 'coactivadores',
+            'decolorantes' => 'decolorantes',
+            'tratamientos' => 'tratamientos',
+        ];
+
+        if (isset($mapa[$grupoCategoria])) {
+            return $mapa[$grupoCategoria];
+        }
+
+        // Respaldo por nombre de categoría (categorías viejas sin "grupo").
+        if ($categoria !== '') {
+            if (str_contains($categoria, 'tinte') || str_contains($categoria, 'coloraci') || str_contains($categoria, 'colorante')) {
+                return 'tintes';
+            }
+
+            if (str_contains($categoria, 'decolor') || str_contains($categoria, 'aclarante')
+                || str_contains($categoria, 'blond') || str_contains($categoria, 'lightener')) {
+                return 'decolorantes';
+            }
+
+            if (str_contains($categoria, 'oxidante')
+                || str_contains($categoria, 'activador')
+                || str_contains($categoria, 'coactivador')) {
+                return 'coactivadores';
+            }
+
+            if (str_contains($categoria, 'tratamiento')) {
+                return 'tratamientos';
+            }
+        }
+
+        // Último respaldo: productos sin categoría pero con nombre reconocible.
+        if (str_contains($nombre, 'decolor') || str_contains($nombre, 'aclarante')) {
             return 'decolorantes';
         }
 
-        if (str_contains($categoria, 'oxidante')
-            || str_contains($categoria, 'activador')
-            || str_contains($categoria, 'coactivador')) {
+        if (str_contains($nombre, 'coactivador') || str_contains($nombre, 'oxidante') || str_contains($nombre, 'developer')) {
             return 'coactivadores';
         }
 
-        if (str_contains($categoria, 'tratamiento')) {
+        if (str_contains($nombre, 'tratamiento') || str_contains($nombre, 'mascarilla')) {
             return 'tratamientos';
         }
 
@@ -94,17 +133,20 @@ class RegistroDiarioService
      */
     public static function costoPorGramo(?Producto $producto): ?string
     {
+        // El valor propio de la ficha manda, también para los tintes: cada
+        // producto puede tener un valor por gramo distinto.
+        $configurado = $producto?->costo_unitario;
+
+        if ($configurado !== null && ! Money::igual((string) $configurado, '0', Money::ESCALA_COSTO_UNITARIO)) {
+            return Money::normal((string) $configurado, Money::ESCALA_COSTO_UNITARIO);
+        }
+
+        // Respaldo histórico para tintes antiguos sin valor configurado.
         if (self::esTinte($producto)) {
             return self::COSTO_GRAMO_TINTE;
         }
 
-        $configurado = $producto?->costo_unitario;
-
-        if ($configurado === null || Money::igual((string) $configurado, '0', Money::ESCALA_COSTO_UNITARIO)) {
-            return null;
-        }
-
-        return Money::normal((string) $configurado, Money::ESCALA_COSTO_UNITARIO);
+        return null;
     }
 
     /**
@@ -146,7 +188,7 @@ class RegistroDiarioService
      * Líneas activas de un período, con las relaciones necesarias para
      * armar el resumen por categoría.
      */
-    public static function lineasPeriodo(string $desde, string $hasta, array $filtros = []): \Illuminate\Database\Eloquent\Builder
+    public static function lineasPeriodo(string $desde, string $hasta, array $filtros = []): Builder
     {
         return ConsumoServicio::query()
             ->where('estado', Consumo::ESTADO_ACTIVO)

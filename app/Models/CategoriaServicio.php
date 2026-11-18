@@ -14,7 +14,6 @@ class CategoriaServicio extends Model
 
     protected $fillable = [
         'nombre',
-        'descripcion',
     ];
 
     public function servicios(): HasMany

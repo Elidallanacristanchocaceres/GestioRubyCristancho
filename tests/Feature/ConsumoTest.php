@@ -13,11 +13,15 @@ use App\Services\InventarioService;
 use App\Support\Money;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
  * Consumo de productos por servicio: cálculo, inventario, idempotencia,
  * histórico de costos y anulación.
+ *
+ * La interfaz Blade se eliminó; estas pruebas ejercitan la API JSON que
+ * consume Angular y las pruebas de servicio.
  *
  * Usa la base de datos de pruebas (beautysalon_testing) dentro de una
  * transacción que siempre se revierte: los datos reales nunca se tocan.
@@ -40,7 +44,7 @@ class ConsumoTest extends TestCase
             'role' => User::ROLE_ADMIN,
         ]);
 
-        $this->actingAs($this->admin);
+        Sanctum::actingAs($this->admin);
     }
 
     private function producto(string $costoUnitario, string $unidad = Producto::UNIDAD_GRAMO): Producto
@@ -51,7 +55,6 @@ class ConsumoTest extends TestCase
             'categoria_producto_id' => $categoria->id,
             'nombre' => 'Producto '.$costoUnitario.' '.uniqid(),
             'unidad_control' => $unidad,
-            'tipo_uso' => Producto::USO_PROFESIONAL,
             'contenido_envase' => '1000',
             'costo_envase' => '100000',
             'costo_unitario' => $costoUnitario,
@@ -188,7 +191,6 @@ class ConsumoTest extends TestCase
             'categoria_producto_id' => $categoria->id,
             'nombre' => 'Sin costo',
             'unidad_control' => Producto::UNIDAD_GRAMO,
-            'tipo_uso' => Producto::USO_PROFESIONAL,
             'stock' => '0',
             'stock_minimo' => '0',
             'activo' => true,
@@ -201,7 +203,7 @@ class ConsumoTest extends TestCase
         ]);
     }
 
-    public function test_pantallas_de_consumos_responden(): void
+    public function test_la_api_de_consumos_responde(): void
     {
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
@@ -212,9 +214,15 @@ class ConsumoTest extends TestCase
         ]);
 
         // 30 x 450 = 13.500 y 30 g usados.
-        $this->get('/consumos')->assertOk()->assertSee('13.500')->assertSee('30,000');
-        $this->get('/consumos/registrar')->assertOk();
-        $this->get('/consumos/'.$consumo->id)->assertOk()->assertSee('13.500');
+        $this->getJson('/api/consumos')
+            ->assertOk()
+            ->assertJsonFragment(['costo_total' => '13500.00']);
+
+        $this->getJson('/api/consumos/opciones')->assertOk();
+
+        $this->getJson('/api/consumos/'.$consumo->id)
+            ->assertOk()
+            ->assertJsonPath('data.costo_total', '13500.00');
     }
 
     public function test_actualizar_revierte_y_reaplica_el_stock(): void
@@ -257,7 +265,7 @@ class ConsumoTest extends TestCase
         $this->assertSame(0, ConsumoServicio::where('consumo_id', $consumo->id)->count());
     }
 
-    public function test_el_panel_muestra_el_registro_diario(): void
+    public function test_el_dashboard_incluye_el_registro_diario(): void
     {
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
@@ -268,7 +276,11 @@ class ConsumoTest extends TestCase
             'detalles' => [['producto_id' => $producto->id, 'cantidad' => '10']],
         ]);
 
-        $this->get('/panel')->assertOk()->assertSee('Registro diario de hoy');
+        $this->getJson('/api/dashboard')
+            ->assertOk()
+            ->assertJsonPath('registros_hoy', 1)
+            ->assertJsonPath('registros_hoy_ingresos', '20000.00')
+            ->assertJsonPath('registros_hoy_lista.0.precio_cobrado', '20000.00');
     }
 
     public function test_guardar_producto_individual_crea_cabecera_y_descuenta(): void
@@ -276,7 +288,7 @@ class ConsumoTest extends TestCase
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
 
-        $respuesta = $this->postJson('/consumos/guardar-producto', [
+        $respuesta = $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-abc',
             'fecha' => now()->toDateString(),
             'descripcion' => 'Color',
@@ -300,12 +312,12 @@ class ConsumoTest extends TestCase
         $this->conStock($tinte, '1000', '450');
         $this->conStock($decolorante, '1000', '390');
 
-        $this->postJson('/consumos/guardar-producto', [
+        $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-xyz', 'fecha' => now()->toDateString(),
             'descripcion' => 'Color', 'producto_id' => $tinte->id, 'cantidad' => '30',
         ])->assertOk();
 
-        $this->postJson('/consumos/guardar-producto', [
+        $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-xyz', 'fecha' => now()->toDateString(),
             'descripcion' => 'Color', 'producto_id' => $decolorante->id, 'cantidad' => '20',
         ])->assertOk();
@@ -322,14 +334,14 @@ class ConsumoTest extends TestCase
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
 
-        $lineaId = $this->postJson('/consumos/guardar-producto', [
+        $lineaId = $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-upd', 'fecha' => now()->toDateString(),
             'descripcion' => 'Color', 'producto_id' => $producto->id, 'cantidad' => '30',
         ])->json('linea.id');
 
         $this->assertSame('970.000', $producto->fresh()->stock);
 
-        $this->postJson('/consumos/guardar-producto', [
+        $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-upd', 'fecha' => now()->toDateString(),
             'descripcion' => 'Color', 'producto_id' => $producto->id, 'cantidad' => '10', 'detalle_id' => $lineaId,
         ])->assertOk();
@@ -345,7 +357,7 @@ class ConsumoTest extends TestCase
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
 
-        $lineaId = $this->postJson('/consumos/guardar-producto', [
+        $lineaId = $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-del', 'fecha' => now()->toDateString(),
             'descripcion' => 'Color', 'producto_id' => $producto->id, 'cantidad' => '30',
         ])->json('linea.id');
@@ -353,7 +365,7 @@ class ConsumoTest extends TestCase
         $consumo = Consumo::where('token', 'jornada-del')->first();
         $this->assertSame('970.000', $producto->fresh()->stock);
 
-        $this->postJson('/consumos/'.$consumo->id.'/quitar-producto', [
+        $this->postJson('/api/consumos/'.$consumo->id.'/quitar-producto', [
             'detalle_id' => $lineaId,
         ])->assertOk();
 
@@ -367,7 +379,7 @@ class ConsumoTest extends TestCase
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
 
-        $respuesta = $this->postJson('/consumos/guardar-producto', [
+        $respuesta = $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-sin-cliente',
             'fecha' => now()->toDateString(),
             'descripcion' => 'Color, corte y cepillado',
@@ -388,17 +400,14 @@ class ConsumoTest extends TestCase
         $this->assertSame('970.000', $producto->fresh()->stock);
     }
 
-    public function test_el_formulario_de_registro_no_pide_cliente_ni_servicio(): void
+    public function test_la_api_de_registro_ofrece_opciones(): void
     {
-        $this->get('/consumos/registrar')
+        $this->getJson('/api/consumos/opciones')
             ->assertOk()
-            ->assertSee('Qué hicimos')
-            ->assertSee('Cobrado')
-            ->assertDontSee('name="cliente_id"')
-            ->assertDontSee('name="servicio_id"');
+            ->assertJsonStructure(['estilistas', 'productos_por_grupo', 'productos', 'grupos', 'costo_tinte']);
     }
 
-    public function test_el_listado_permite_eliminar_un_registro_y_devuelve_el_stock(): void
+    public function test_la_api_elimina_un_registro_y_devuelve_el_stock(): void
     {
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
@@ -410,12 +419,7 @@ class ConsumoTest extends TestCase
         ]);
         $this->assertSame('970.000', $producto->fresh()->stock);
 
-        // El listado muestra el botón para eliminar y el registro se borra.
-        $this->get('/consumos')->assertOk()->assertSee('Eliminar');
-
-        $this->delete('/consumos/'.$consumo->id)
-            ->assertRedirect(route('consumos.index'))
-            ->assertSessionHas('exito');
+        $this->deleteJson('/api/consumos/'.$consumo->id)->assertOk();
 
         $this->assertNull(Consumo::find($consumo->id));
         $this->assertSame('1000.000', $producto->fresh()->stock);
@@ -440,13 +444,12 @@ class ConsumoTest extends TestCase
             'detalles' => [['producto_id' => $producto->id, 'cantidad' => '30']],
         ]);
 
-        // El formulario ya no pregunta por el cliente: al editar no debe borrarse.
-        $this->put('/consumos/'.$consumo->id, [
+        $this->putJson('/api/consumos/'.$consumo->id, [
             'fecha' => now()->toDateString(),
             'descripcion' => 'Color y corte',
             'precio_cobrado' => '60000',
             'detalles' => [['producto_id' => $producto->id, 'cantidad' => '30']],
-        ])->assertRedirect(route('consumos.show', $consumo));
+        ])->assertOk();
 
         $consumo->refresh();
 
@@ -460,7 +463,7 @@ class ConsumoTest extends TestCase
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
 
-        $this->postJson('/consumos/guardar-producto', [
+        $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-sin-descripcion',
             'fecha' => now()->toDateString(),
             'producto_id' => $producto->id,
@@ -482,7 +485,7 @@ class ConsumoTest extends TestCase
             'detalles' => [['producto_id' => $producto->id, 'cantidad' => '30']],
         ]);
 
-        $this->patchJson('/consumos/'.$consumo->id.'/cabecera', [
+        $this->patchJson('/api/consumos/'.$consumo->id.'/cabecera', [
             'fecha' => now()->toDateString(),
             'descripcion' => 'Color 8.3 + balayage',
             'precio_cobrado' => '120000',
@@ -504,14 +507,14 @@ class ConsumoTest extends TestCase
         $producto = $this->producto('450');
         $this->conStock($producto, '1000', '450');
 
-        $this->postJson('/consumos/guardar-producto', [
+        $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-doble', 'fecha' => now()->toDateString(),
             'descripcion' => 'Color', 'precio_cobrado' => '80000',
             'producto_id' => $producto->id, 'cantidad' => '30',
         ])->assertOk();
 
         // Un guardado que no vuelve a mandar la cabecera no debe vaciarla.
-        $this->postJson('/consumos/guardar-producto', [
+        $this->postJson('/api/consumos/guardar-producto', [
             'token' => 'jornada-doble', 'fecha' => now()->toDateString(),
             'descripcion' => 'Color', 'producto_id' => $producto->id, 'cantidad' => '10',
         ])->assertOk();

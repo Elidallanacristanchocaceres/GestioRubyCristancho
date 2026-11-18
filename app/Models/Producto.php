@@ -20,19 +20,11 @@ class Producto extends Model
 
     public const UNIDAD_BOLSA = 'bolsa';
 
-    public const USO_PROFESIONAL = 'profesional';
-
-    public const USO_VENTA = 'venta';
-
-    public const USO_AMBOS = 'ambos';
-
     protected $fillable = [
         'categoria_producto_id',
         'proveedor_id',
         'nombre',
-        'codigo',
         'marca',
-        'linea',
         'tono',
         'descripcion',
         'precio_costo',
@@ -46,7 +38,6 @@ class Producto extends Model
         'presentacion',
         'costo_envase',
         'costo_unitario',
-        'tipo_uso',
         'fecha_compra',
         'fecha_vencimiento',
         'activo',
@@ -143,7 +134,7 @@ class Producto extends Model
             return 'Sin presentación';
         }
 
-        return Money::formatoDecimal($this->contenido_envase) . ' ' . $this->unidadAbrev();
+        return Money::formatoDecimal($this->contenido_envase).' '.$this->unidadAbrev();
     }
 
     public function unidadLabel(): string

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Cita;
 use App\Models\Servicio;
 use App\Support\Money;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 
@@ -17,7 +18,7 @@ class CitaService
     public function crear(array $datos): Cita
     {
         $servicio = Servicio::findOrFail($datos['servicio_id']);
-        $duracion = $datos['duracion_minutos'] ?? $servicio->duracion_minutos;
+        $duracion = $datos['duracion_minutos'] ?? 60;
         $precio = $datos['precio'] ?? $servicio->precio;
         $anticipo = Money::normal($datos['anticipo'] ?? '0');
         $fechaHora = $datos['fecha_hora'];
@@ -75,7 +76,7 @@ class CitaService
      */
     public function validarDisponibilidad(int $estilistaId, $fechaHora, int $duracion, ?int $ignorarCitaId = null): void
     {
-        $inicio = \Illuminate\Support\Carbon::parse($fechaHora);
+        $inicio = Carbon::parse($fechaHora);
         $fin = $inicio->copy()->addMinutes($duracion);
 
         $citas = Cita::where('estilista_id', $estilistaId)

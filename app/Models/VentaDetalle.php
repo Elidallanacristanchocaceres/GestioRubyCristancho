@@ -17,6 +17,8 @@ class VentaDetalle extends Model
         'descripcion',
         'cantidad',
         'unidad',
+        'presentacion',
+        'contenido_envase',
         'precio_unitario',
         'descuento',
         'subtotal',
@@ -28,6 +30,7 @@ class VentaDetalle extends Model
     {
         return [
             'cantidad' => 'decimal:3',
+            'contenido_envase' => 'decimal:3',
             'precio_unitario' => 'decimal:2',
             'descuento' => 'decimal:2',
             'subtotal' => 'decimal:2',

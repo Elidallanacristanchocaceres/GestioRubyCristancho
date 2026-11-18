@@ -42,6 +42,7 @@ class ConfiguracionSeeder extends Seeder
             ['clave' => 'negocio_direccion', 'valor' => '', 'etiqueta' => 'Dirección', 'grupo' => 'general'],
             ['clave' => 'moneda', 'valor' => 'COP', 'etiqueta' => 'Moneda', 'grupo' => 'general'],
             ['clave' => 'iva_porcentaje', 'valor' => '19', 'etiqueta' => 'IVA (%)', 'grupo' => 'general'],
+            ['clave' => 'diezmo_porcentaje', 'valor' => '10', 'etiqueta' => 'Diezmo semanal (%)', 'grupo' => 'general'],
             ['clave' => 'alerta_stock_bajo', 'valor' => '1', 'etiqueta' => 'Alertas de stock bajo', 'grupo' => 'alertas'],
             ['clave' => 'alerta_vencimiento_dias', 'valor' => '30', 'etiqueta' => 'Días de aviso de vencimiento', 'grupo' => 'alertas'],
         ];

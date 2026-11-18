@@ -14,7 +14,7 @@ return new class extends Migration
                 $table->string('nombre', 200);
                 $table->string('nit', 30)->nullable();
                 $table->string('contacto', 200)->nullable();
-                $table->string('telefono', 30)->nullable();
+                $table->text('telefono')->nullable();
                 $table->string('whatsapp', 30)->nullable();
                 $table->string('email', 150)->nullable();
                 $table->string('direccion', 300)->nullable();

@@ -15,7 +15,6 @@ class Servicio extends Model
         'categoria_servicio_id',
         'nombre',
         'descripcion',
-        'duracion_minutos',
         'precio',
         'costo_mano_obra',
         'activo',

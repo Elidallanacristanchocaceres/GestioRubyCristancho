@@ -84,7 +84,7 @@ class InventarioImportarDatos extends Command
 
         foreach (['Productos de protección', 'Accesorios y otros productos'] as $nombre) {
             if (! CategoriaProducto::where('nombre', $nombre)->exists()) {
-                CategoriaProducto::create(['nombre' => $nombre, 'descripcion' => 'Categoría creada para el inventario.']);
+                CategoriaProducto::create(['nombre' => $nombre]);
                 $this->line("  + Categoría creada: {$nombre}");
             }
         }
@@ -130,6 +130,7 @@ class InventarioImportarDatos extends Command
                 $producto = Producto::find($item['producto_id']);
                 if (! $producto) {
                     $this->warn("  ! No se encontró el producto id {$item['producto_id']} (código {$item['codigo']})");
+
                     continue;
                 }
 
@@ -163,6 +164,7 @@ class InventarioImportarDatos extends Command
 
                 $this->line("  ~ [{$item['codigo']}] {$producto->nombre}".($item['pendiente'] ?? false ? '  ·PENDIENTE' : ''));
                 $coincididos++;
+
                 continue;
             }
 
@@ -172,9 +174,7 @@ class InventarioImportarDatos extends Command
             $esNuevo = ! $producto->exists;
 
             $producto->fill([
-                'codigo' => $producto->codigo ?: $item['codigo'],
                 'marca' => $producto->marca ?: 'ALTER EGO',
-                'linea' => $item['linea'] ?? ($producto->linea ?: $this->lineaDelNombre($nombre)),
                 'tono' => $item['tono'] ?? $producto->tono,
                 'categoria_producto_id' => CategoriaProducto::where('nombre', $item['categoria'])->value('id'),
                 'proveedor_id' => $producto->proveedor_id ?: $proveedorId,
@@ -184,7 +184,6 @@ class InventarioImportarDatos extends Command
                 'precio_costo' => $producto->precio_costo ?: ($item['costo'] ?? null),
                 'fecha_compra' => $producto->fecha_compra ?: self::FECHA_FACTURA,
                 'pendiente_confirmacion' => ! empty($item['pendiente']),
-                'tipo_uso' => $producto->tipo_uso ?: 'ambos',
                 'descripcion' => $item['nota'] ?? $producto->descripcion,
                 'activo' => true,
             ]);
@@ -230,14 +229,12 @@ class InventarioImportarDatos extends Command
 
             $producto->fill([
                 'marca' => 'ALTER EGO',
-                'linea' => $item['linea'],
                 'categoria_producto_id' => CategoriaProducto::where('nombre', $item['categoria'])->value('id'),
                 'unidad_control' => 'mililitro',
                 'contenido_envase' => $item['contenido'],
                 'precio_sugerido' => $item['precio'],
                 'precio_venta' => $item['precio'],
                 'stock_minimo' => 2,
-                'tipo_uso' => 'ambos',
                 'activo' => true,
                 'pendiente_confirmacion' => false,
                 'descripcion' => 'Producto del catálogo ALTER EGO (LP SUGERIDO 2026); presentación '.$item['contenido'].' ml.',

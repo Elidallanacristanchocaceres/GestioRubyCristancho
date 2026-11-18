@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Caja;
+use App\Models\CategoriaGasto;
 use App\Models\Compra;
 use App\Models\CompraDetalle;
 use App\Models\CompraPago;
@@ -43,7 +45,7 @@ class CompraService
                 'total' => '0',
                 'total_pagado' => '0',
                 'saldo_pendiente' => '0',
-                'estado' => 'recibido',
+                'estado' => 'recibida',
                 'notas' => $datos['notas'] ?? null,
                 'created_by' => Auth::id(),
             ]);
@@ -190,13 +192,15 @@ class CompraService
 
             $totalPagado = Money::add((string) $compra->total_pagado, $monto);
             $saldo = Money::sub((string) $compra->total, $totalPagado);
+            $estado = Money::igual($saldo, '0') ? 'pagada' : $compra->estado;
 
             $compra->update([
                 'total_pagado' => $totalPagado,
                 'saldo_pendiente' => $saldo,
+                'estado' => $estado,
             ]);
 
-            if ($afectarCaja && \App\Models\Caja::cajaAbierta()) {
+            if ($afectarCaja && Caja::cajaAbierta()) {
                 $movimiento = app(CajaService::class)->registrarMovimiento([
                     'tipo' => 'egreso',
                     'monto' => $monto,
@@ -214,6 +218,6 @@ class CompraService
 
     private function categoriaProductosId(): ?int
     {
-        return \App\Models\CategoriaGasto::where('nombre', 'Productos')->value('id');
+        return CategoriaGasto::where('nombre', 'Productos')->value('id');
     }
 }

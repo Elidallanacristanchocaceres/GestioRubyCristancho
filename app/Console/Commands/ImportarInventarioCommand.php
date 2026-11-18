@@ -31,6 +31,8 @@ class ImportarInventarioCommand extends Command
 
     private const MARCA_ORIGEN = '[import:catalogo-inicial]';
 
+    private const MARCA_PRODUCTO_CREADO = 'Creado desde el catálogo inicial.';
+
     public function handle(InventarioService $inventario): int
     {
         $items = require database_path('data/inventario_inicial.php');
@@ -56,14 +58,15 @@ class ImportarInventarioCommand extends Command
             $nuevo = ! $producto->exists;
 
             if ($nuevo) {
-                $producto = new Producto();
+                $producto = new Producto;
             }
 
             $categoria = $this->resolverCategoria($item, $categorias, $producto, $dryRun);
 
             if (! $categoria) {
-                $this->warn('  ! Categoría desconocida: ' . ($item['categoria'] ?? 'sin categoría')
-                    . ' (para ' . ($item['nombre'] ?? $item['alias'] ?? 'producto') . ')');
+                $this->warn('  ! Categoría desconocida: '.($item['categoria'] ?? 'sin categoría')
+                    .' (para '.($item['nombre'] ?? $item['alias'] ?? 'producto').')');
+
                 continue;
             }
 
@@ -81,6 +84,7 @@ class ImportarInventarioCommand extends Command
                 // solo se reporta cuando ya había un valor distinto.
                 if ($producto->exists && $anterior === null && in_array($campo, ['presentacion', 'contenido_envase'], true)) {
                     $producto->{$campo} = $valor;
+
                     continue;
                 }
 
@@ -91,7 +95,7 @@ class ImportarInventarioCommand extends Command
                 $producto->{$campo} = $valor;
             }
 
-            $descripcion = $this->componerDescripcion($producto->descripcion, $item, $cambiosProducto);
+            $descripcion = $this->componerDescripcion($producto->descripcion, $item, $cambiosProducto, $nuevo);
             if ($descripcion !== $producto->descripcion) {
                 $producto->descripcion = $descripcion;
             }
@@ -148,7 +152,7 @@ class ImportarInventarioCommand extends Command
             $this->newLine();
             $this->warn('Precios y datos ajustados (revisar y confirmar):');
             foreach ($cambios as [$nombre, $detalle]) {
-                $this->line("  · {$nombre}: " . implode('; ', $detalle));
+                $this->line("  · {$nombre}: ".implode('; ', $detalle));
             }
         }
 
@@ -239,7 +243,7 @@ class ImportarInventarioCommand extends Command
                         'estado_envase' => 'nuevo',
                         'medido' => true,
                         'motivo' => 'Carga de inventario inicial',
-                        'notas' => trim(self::MARCA_ORIGEN . ' ' . ($item['notas'] ?? 'Envases nuevos completos.')),
+                        'notas' => trim(self::MARCA_ORIGEN.' '.($item['notas'] ?? 'Envases nuevos completos.')),
                         'modulo' => 'inventario',
                     ]);
 
@@ -258,7 +262,7 @@ class ImportarInventarioCommand extends Command
                     'estado_envase' => 'nuevo',
                     'medido' => false,
                     'motivo' => 'Carga de inventario inicial (envases por medir)',
-                    'notas' => trim(self::MARCA_ORIGEN . ' ' . ($item['notas'] ?? 'Envases nuevos sin contenido definido: medir para actualizar el stock.')),
+                    'notas' => trim(self::MARCA_ORIGEN.' '.($item['notas'] ?? 'Envases nuevos sin contenido definido: medir para actualizar el stock.')),
                     'modulo' => 'inventario',
                 ]);
 
@@ -283,7 +287,7 @@ class ImportarInventarioCommand extends Command
                 'estado_envase' => 'empezado',
                 'medido' => false,
                 'motivo' => 'Carga de inventario inicial (envases por medir)',
-                'notas' => trim(self::MARCA_ORIGEN . ' ' . ($item['notas'] ?? 'Envase empezado sin medir.')),
+                'notas' => trim(self::MARCA_ORIGEN.' '.($item['notas'] ?? 'Envase empezado sin medir.')),
                 'modulo' => 'inventario',
             ]);
 
@@ -315,7 +319,7 @@ class ImportarInventarioCommand extends Command
     private function loteYaCargado(int $productoId, string $estadoEnvase, bool $medido): bool
     {
         return InventarioLote::where('producto_id', $productoId)
-            ->where('notas', 'like', '%' . self::MARCA_ORIGEN . '%')
+            ->where('notas', 'like', '%'.self::MARCA_ORIGEN.'%')
             ->where('estado_envase', $estadoEnvase)
             ->where('medido', $medido)
             ->exists();
@@ -328,7 +332,7 @@ class ImportarInventarioCommand extends Command
         }
 
         $yaCargado = InventarioLote::where('producto_id', $producto->id)
-            ->where('notas', 'like', '%' . self::MARCA_ORIGEN . '%')
+            ->where('notas', 'like', '%'.self::MARCA_ORIGEN.'%')
             ->exists();
 
         if ($yaCargado) {
@@ -343,26 +347,62 @@ class ImportarInventarioCommand extends Command
     }
 
     /**
-     * Busca el producto existente por id; si no viene id o el id no existe
-     * (base vacía o ficha dada de baja), por nombre o por alias de la lista.
+     * Resuelve la ficha del producto para un ítem del catálogo.
+     *
+     * El id de la lista de precios solo se usa si la ficha venía de la base
+     * original: en una base nueva los ids se reutilizan y podrían apuntar a
+     * un producto distinto creado por esta misma importación.
      */
     private function buscarProducto(array $item): Producto
     {
+        $nombre = trim($item['nombre'] ?? '');
+        $alias = trim($item['alias'] ?? '');
+
+        if ($nombre !== '') {
+            $porNombre = $this->buscarPorNombre($nombre, $item);
+
+            if ($porNombre) {
+                return $porNombre;
+            }
+        }
+
+        if ($alias !== '') {
+            $porAlias = $this->buscarPorAliasImportado($alias, $item);
+
+            if ($porAlias) {
+                return $porAlias;
+            }
+        }
+
         if (! empty($item['producto_id'])) {
             $existente = Producto::withTrashed()->find($item['producto_id']);
 
-            if ($existente) {
+            if ($existente && ! $this->creadoPorImportacion($existente)) {
                 return $existente;
             }
         }
 
-        $nombre = trim($item['nombre'] ?? $item['alias'] ?? '');
+        $identidad = $nombre !== '' ? $nombre : $alias;
+
+        if ($identidad !== '') {
+            $porNombre = $this->buscarPorNombre($identidad, $item);
+
+            if ($porNombre) {
+                return $porNombre;
+            }
+        }
+
+        return new Producto;
+    }
+
+    private function buscarPorNombre(string $nombre, array $item): ?Producto
+    {
         $candidatos = Producto::withTrashed()
             ->whereRaw('LOWER(TRIM(nombre)) = ?', [mb_strtolower($nombre)])
             ->get();
 
         if ($candidatos->isEmpty()) {
-            return new Producto();
+            return null;
         }
 
         if ($candidatos->count() === 1) {
@@ -384,12 +424,51 @@ class ImportarInventarioCommand extends Command
         return $candidatos->first();
     }
 
+    /**
+     * Un producto creado por una importación anterior guarda su alias en la
+     * descripción; así se le reconoce aunque el id de otra base coincida.
+     */
+    private function buscarPorAliasImportado(string $alias, array $item): ?Producto
+    {
+        $patron = '/nombre en la lista de precios:\s*'.preg_quote($alias, '/').'\s*(?:\r?\n|$)/iu';
+
+        $candidatos = Producto::withTrashed()
+            ->whereRaw('LOWER(descripcion) LIKE ?', ['%'.mb_strtolower(addcslashes($alias, '%_\\')).'%'])
+            ->get()
+            ->filter(fn (Producto $p) => preg_match($patron, (string) $p->descripcion) === 1);
+
+        if ($candidatos->isEmpty()) {
+            return null;
+        }
+
+        if ($candidatos->count() === 1) {
+            return $candidatos->first();
+        }
+
+        if (isset($item['contenido_envase'])) {
+            $contenido = (float) $item['contenido_envase'];
+            $exacto = $candidatos->firstWhere(
+                fn (Producto $p) => (float) $p->contenido_envase === $contenido
+            );
+
+            if ($exacto) {
+                return $exacto;
+            }
+        }
+
+        return $candidatos->first();
+    }
+
+    private function creadoPorImportacion(Producto $producto): bool
+    {
+        return str_contains((string) $producto->descripcion, self::MARCA_PRODUCTO_CREADO);
+    }
+
     private function datosProducto(array $item, CategoriaProducto $categoria, Producto $producto): array
     {
         $datos = [
             'categoria_producto_id' => $categoria->id,
             'unidad_control' => $item['unidad'] ?? $producto->unidad_control ?? Producto::UNIDAD_UNIDAD,
-            'tipo_uso' => $item['tipo_uso'] ?? $producto->tipo_uso ?? Producto::USO_PROFESIONAL,
             'activo' => true,
         ];
 
@@ -401,7 +480,7 @@ class ImportarInventarioCommand extends Command
             $datos['nombre'] = trim($item['alias']);
         }
 
-        foreach (['codigo', 'marca', 'tono', 'linea', 'precio_costo', 'precio_venta', 'precio_sugerido', 'stock_minimo'] as $campo) {
+        foreach (['marca', 'tono', 'precio_costo', 'precio_venta', 'precio_sugerido', 'stock_minimo'] as $campo) {
             if (isset($item[$campo])) {
                 $datos[$campo] = $item[$campo];
             }
@@ -433,7 +512,7 @@ class ImportarInventarioCommand extends Command
     /**
      * Compone la descripción sin pisar lo que ya estuviera escrito.
      */
-    private function componerDescripcion(?string $actual, array $item, array $cambiosProducto): ?string
+    private function componerDescripcion(?string $actual, array $item, array $cambiosProducto, bool $nuevo = false): ?string
     {
         $partes = [];
 
@@ -443,12 +522,16 @@ class ImportarInventarioCommand extends Command
 
         $texto = (string) $actual;
 
+        if ($nuevo) {
+            $partes[] = self::MARCA_PRODUCTO_CREADO;
+        }
+
         if (! empty($item['alias']) && ! str_contains(mb_strtolower($texto), mb_strtolower($item['alias']))) {
-            $partes[] = 'Nombre en la lista de precios: ' . $item['alias'];
+            $partes[] = 'Nombre en la lista de precios: '.$item['alias'];
         }
 
         if (! empty($item['presentacion']) && ! str_contains(mb_strtolower($texto), 'presentación:')) {
-            $partes[] = 'Presentación: ' . $item['presentacion'];
+            $partes[] = 'Presentación: '.$item['presentacion'];
         }
 
         if (! empty($item['notas']) && ! str_contains(mb_strtolower($texto), mb_strtolower($item['notas']))) {
@@ -456,7 +539,7 @@ class ImportarInventarioCommand extends Command
         }
 
         if ($cambiosProducto !== []) {
-            $resumen = 'Ajustado desde la lista de precios: ' . implode('; ', array_filter(
+            $resumen = 'Ajustado desde la lista de precios: '.implode('; ', array_filter(
                 $cambiosProducto,
                 fn ($c) => ! str_contains($c, 'queda marcado para revisión')
             ));
@@ -507,7 +590,6 @@ class ImportarInventarioCommand extends Command
         $categoria = CategoriaProducto::create([
             'nombre' => $nombre,
             'grupo' => $grupo,
-            'descripcion' => 'Categoría creada durante la importación del catálogo.',
         ]);
 
         $categorias[$nombre] = $categoria;
